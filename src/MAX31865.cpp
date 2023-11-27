@@ -2,7 +2,6 @@
 
 // #include "tools-log.h"
 
-#define REG_WRITE					0x80		// register write address offset
 #define REG_CONFIG					0x00
 #define 	CONFIG_BIAS 			0x80
 #define 	CONFIG_MODEAUTO 		0x40
@@ -42,10 +41,12 @@ bool MAX31865::begin(float Rnominal, float Rreference, bool threewires, bool net
         config |= CONFIG_3WIRE;
     if(net50hz)
         config |= CONFIG_FILT50HZ;
+  	config |= CONFIG_FAULTCLEAR;
 
     // both done by above code:
     // setAutoConvert(false);
     // clearFaults();
+	writereg8(REG_CONFIG, config);
 
 	return true;
 };
@@ -61,23 +62,23 @@ void MAX31865::setThreeWires(bool usethree)
 	writereg8(REG_CONFIG, config);
 };
 
-void MAX31865::setEnableBias(bool bias) 
-{
-	uint8_t config = readreg8(REG_CONFIG);
-	if (bias) 
-        config |= CONFIG_BIAS; // enable bias
-	else 
-		config &= ~CONFIG_BIAS; // disable bias
-	writereg8(REG_CONFIG, config);
-};
+// void MAX31865::setEnableBias(bool bias) 
+// {
+// 	uint8_t config = readreg8(REG_CONFIG);
+// 	if (bias) 
+//         config |= CONFIG_BIAS; // enable bias
+// 	else 
+// 		config &= ~CONFIG_BIAS; // disable bias
+// 	writereg8(REG_CONFIG, config);
+// };
 
 void MAX31865::setAutoConvert(bool ac) 
 {
 	uint8_t config = readreg8(REG_CONFIG);
 	if (ac)
-		config |= CONFIG_MODEAUTO; 
+		config |= (CONFIG_MODEAUTO | CONFIG_BIAS); 
 	else
-		config &= ~CONFIG_MODEAUTO;
+		config &= ~(CONFIG_MODEAUTO | CONFIG_BIAS);
 	writereg8(REG_CONFIG, config);
     _automode = ac;
 };
@@ -113,17 +114,8 @@ void MAX31865::clearFaults()
   	writereg8(REG_CONFIG, config);
 };
 
-/**************************************************************************/
-/*!
-    @brief Read the raw 8-bit FAULTSTAT register
-    @param fault_cycle The fault cycle type to run. Can be MAX31865_FAULT_NONE,
-   MAX31865_FAULT_AUTO, MAX31865_FAULT_MANUAL_RUN, or
-   MAX31865_FAULT_MANUAL_FINISH
-    @return The raw unsigned 8-bit FAULT status register
-*/
-/**************************************************************************/
-// uint8_t MAX31865::readFault(max31865_fault_cycle_t fault_cycle) 
-// {
+uint8_t MAX31865::readFaults() //max31865_fault_cycle_t fault_cycle) 
+{
     // if (fault_cycle) 
     // {
     //     uint8_t cfg_reg = readreg8(REG_CONFIG);
@@ -145,13 +137,37 @@ void MAX31865::clearFaults()
     //             break;
     //     };
     // };
-//     return readreg8(REG_FAULTSTAT);
-// };
+    return readreg8(REG_FAULTSTAT);
+};
 
+#ifdef DEBUG_MAX31865
+void MAX31865::printFaults()
+{
+    uint8_t f = readFaults();
+    String msg = "Faults: ";
+    if(f & 0x80) // D7
+        msg += "D7(RTDIN_Open) ";
+    if(f & 0x40) // D6
+        msg += "D6(RTDIN_Short) ";
+    if(f & 0x20) // D5
+        msg += "D5 ";
+    if(f & 0x10) // D4
+        msg += "D4 ";
+    if(f & 0x08) // D3
+        msg += "D3 ";
+    if(f & 0x04) // D2
+        msg += "D2(Over/Under Voltage!) ";
+    ERROR("Fault: %s", msg.c_str());
+};
+#endif
 
 void MAX31865::startOneshot()
 {
-    clearFaults(); //  ?
+
+#ifdef DEBUG_MAX31865
+    DBG("Start one-shot");
+    clearFaults();
+#endif
 
     // Turn on bias and wait a while
     // setEnableBias(true);
@@ -168,7 +184,6 @@ void MAX31865::startOneshot()
     // And bias off
     // setEnableBias(false); // Disable bias current again to reduce selfheating.
     cfg &= ~CONFIG_BIAS;
-    delay(65);
 
     return;
 };
@@ -177,8 +192,13 @@ uint16_t MAX31865::getRaw()
 {
     uint16_t val = readreg16(REG_RTD_MSB);
     if(val & 0x0001)
+    {
+#ifdef DEBUG_MAX31865
+        printFaults();
+#endif
         return 0xFFFF;
-    return val;
+    };
+    return val >> 1;
 };
 
 float MAX31865::getTemperature() 
@@ -186,9 +206,14 @@ float MAX31865::getTemperature()
     if(!_automode)
         startOneshot();
     
-    uint16_t raw = getRaw();
-    
+    uint16_t raw = getRaw();    
     float rtd = raw * _Rref / 32768.0;
+#ifdef DEBUG_MAX31865
+    DBG("raw = %d, R = %.1f Ohms", raw, rtd);
+#endif
+
+    if(raw == 0xFFFF) // error
+        return NAN;
 
     // Datasheet, page 10: R(T) = R0(1 + aT + bT^2 + c(T - 100)T^3)
     // a = 3.90830 x 10-3
@@ -198,29 +223,29 @@ float MAX31865::getTemperature()
 #define RTD_A   3.9083e-3
 #define RTD_B   -5.775e-7
     // float Z1 = -RTD_A;
-#define Z1      (-RTD_A)
+#define RTD_Z1      (-RTD_A)
     // float Z2 = RTD_A * RTD_A - (4 * RTD_B);
-#define Z2      (RTD_A * RTD_A - (4 * RTD_B))
+#define RTD_Z2      (RTD_A * RTD_A - (4 * RTD_B))
     float Z3 = (4 * RTD_B) / _Rnom;
     // float Z4 = 2 * RTD_B;
-#define Z4      (2*RTD_B);
+#define RTD_Z4      (2*RTD_B);
 
-    float temp = Z2 + (Z3 * rtd);
-    temp = (sqrt(temp) + Z1) / Z4;
+    float temp = RTD_Z2 + (Z3 * rtd);
+    temp = (sqrt(temp) + RTD_Z1) / RTD_Z4;
 
     if (temp >= 0)
         return temp;
 
-    // ugh.
-    // rtd /= _Rnom;
-    // rtd *= 100; // normalize to 100 ohm
+    rtd /= _Rnom;
+    rtd *= 100; // normalize to 100 ohm
+    float rpoly = rtd; 
 
     // ^1
     temp = -242.02;
-    temp += 2.2228 * rtd;
+    temp += 2.2228 * rpoly;
 
     // ^2
-    float rpoly = rtd*rtd; 
+    rpoly *= rtd;
     temp += 2.5859e-3 * rpoly;
 
     //^3

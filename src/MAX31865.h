@@ -18,18 +18,23 @@ class MAX31865 : public SPIDevice
 		bool begin(float Rnominal = 100, float Rref = 430, bool threewires = false, bool net50hz = true);		
 
 		void setThreeWires(bool);
-		void setEnableBias(bool);
 		void setAutoConvert(bool);
 		void setNet50(bool);
 		void setLowThreshold(uint16_t th);
 		void setHighThreshold(uint16_t th);
 
-		// uint8_t readFaults();
+		uint8_t readFaults();
 		void clearFaults();
+#ifdef DEBUG_MAX31865
+		void printFaults();
+#endif
 
 		void startOneshot();
 		uint16_t getRaw();
 		float getTemperature(); // respects automode / oneshot
+
+	protected:
+		// void setEnableBias(bool);
 
 	private:
 		bool _automode = false; // oneshot mode

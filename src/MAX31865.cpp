@@ -40,8 +40,10 @@ bool MAX31865::begin(float Rnominal, float Rreference, bool threewires, bool net
     if(threewires)
         config |= CONFIG_3WIRE;
     if(net50hz)
+    {
         config |= CONFIG_FILT50HZ;
-  	config |= CONFIG_FAULTCLEAR;
+    };
+    config |= CONFIG_FAULTCLEAR;
 
     // both done by above code:
     // setAutoConvert(false);
@@ -56,9 +58,11 @@ void MAX31865::setThreeWires(bool usethree)
 	uint8_t config = readreg8(REG_CONFIG);
 
     if(usethree)
+    {
         config |= CONFIG_3WIRE;
-    else
+    }else{
         config &= ~CONFIG_3WIRE;
+    };
 	writereg8(REG_CONFIG, config);
 };
 
@@ -100,9 +104,11 @@ void MAX31865::setNet50(bool use50)
     uint8_t config = readreg8(REG_CONFIG);
 
     if(use50)
+    {
         config |= CONFIG_FILT50HZ;
-    else
+    }else{
         config &= ~CONFIG_FILT50HZ;
+    };
 	writereg8(REG_CONFIG, config);
 };
 

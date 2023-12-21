@@ -1,6 +1,8 @@
 #include "MAX31865.h"
 
-// #include "tools-log.h"
+#ifdef DEBUG_MAX31865
+    #include "tools-log.h"
+#endif
 
 #define REG_CONFIG					0x00
 #define 	CONFIG_BIAS 			0x80
@@ -150,7 +152,7 @@ uint8_t MAX31865::readFaults() //max31865_fault_cycle_t fault_cycle)
 void MAX31865::printFaults()
 {
     uint8_t f = readFaults();
-    String msg = "Faults: ";
+    String msg;
     if(f & 0x80) // D7
         msg += "D7(RTDIN_Open) ";
     if(f & 0x40) // D6
@@ -163,7 +165,7 @@ void MAX31865::printFaults()
         msg += "D3 ";
     if(f & 0x04) // D2
         msg += "D2(Over/Under Voltage!) ";
-    ERROR("Fault: %s", msg.c_str());
+    ERROR("Faults: %s", msg.c_str());
 };
 #endif
 
@@ -172,15 +174,15 @@ void MAX31865::startOneshot()
 
 #ifdef DEBUG_MAX31865
     DBG("Start one-shot");
-    clearFaults();
 #endif
-
+    clearFaults();
+    
     // Turn on bias and wait a while
     // setEnableBias(true);
     uint8_t cfg = readreg8(REG_CONFIG);
     cfg |= CONFIG_BIAS;
     writereg8(REG_CONFIG, cfg);
-    delay(10);
+    // delay(10);
 
     // Start oneshot
     cfg |= CONFIG_1SHOT;
@@ -190,6 +192,7 @@ void MAX31865::startOneshot()
     // And bias off
     // setEnableBias(false); // Disable bias current again to reduce selfheating.
     cfg &= ~CONFIG_BIAS;
+    writereg8(REG_CONFIG, cfg);
 
     return;
 };
@@ -215,7 +218,7 @@ float MAX31865::getTemperature()
     uint16_t raw = getRaw();    
     float rtd = raw * _Rref / 32768.0;
 #ifdef DEBUG_MAX31865
-    DBG("raw = %d, R = %.1f Ohms", raw, rtd);
+    DBG("raw = %u, R = %.1f Ohms", raw, rtd);
 #endif
 
     if(raw == 0xFFFF) // error

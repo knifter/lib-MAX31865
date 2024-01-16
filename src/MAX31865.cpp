@@ -174,8 +174,8 @@ void MAX31865::startOneshot()
 
 #ifdef DEBUG_MAX31865
     DBG("Start one-shot");
-#endif
     clearFaults();
+#endif
     
     // Turn on bias and wait a while
     // setEnableBias(true);
@@ -204,6 +204,8 @@ uint16_t MAX31865::getRaw()
     {
 #ifdef DEBUG_MAX31865
         printFaults();
+#else
+        clearFaults();
 #endif
         return 0xFFFF;
     };
